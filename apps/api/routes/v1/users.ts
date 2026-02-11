@@ -1,13 +1,16 @@
 import { prismaClient } from "@repo/db/client";
 import express from "express";
 import bcrypt from "bcrypt"
+import "dotenv/config";
 import z from "zod";
 export const userRouter = express.Router();
-// import jsonwebtoken  from "jsonwebtoken";
+import type  { AuthRequest } from "../../middlware/userMiddlware";
+import { userMiddleware } from "../../middlware/userMiddlware";
+
 import jwt from "jsonwebtoken"
 import { Auth } from "../../types/auth";
 
-userRouter.post("/signup",async  (req, res)=>{
+userRouter.post("/signup",async  (req : AuthRequest, res)=>{
    
   const result = Auth.safeParse(req.body);
 
@@ -63,7 +66,7 @@ userRouter.post("/signin",async  (req, res)=>{
     }
     const user =await bcrypt.compare(password,name.password);
     if(user){
-       const token =  jwt.sign(name.id, "ankush");
+       const token =  jwt.sign(name.id, process.env.jwt_secret  || "ankush");
         return res.json({token  });
         
 
@@ -75,8 +78,38 @@ userRouter.post("/signin",async  (req, res)=>{
     
 });
 
+userRouter.use(userMiddleware);
+userRouter.get("/status/:websiteId" , async (req : AuthRequest, res )=>{
+    const userId = req.userId;
+    const websiteUrl = (req.params.websiteId) as string;
+    let details;
+try {
+       details = await prismaClient.website.findFirst({
+        where : {
+            user_id  : userId!,
+            url : websiteUrl!
 
-userRouter.get("/status/:websiteId" , (req, res )=>{
+
+        },
+        include:{
+            ticks : {
+                orderBy : [{
+                    createdat : "desc"
+                }],
+                take : 1
+            }
+
+        }
+    })
+
+}catch(e){
+    return res.json({message : "website not present"});
+}
+
+return res.json({details});
+
+   
+
 
 
 });

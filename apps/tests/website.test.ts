@@ -1,6 +1,19 @@
-import { describe, expect, it } from "bun:test";
+import { beforeAll, describe, expect, expectTypeOf, it } from "bun:test";
 import axios from "axios";
 let baseUrl = "http://localhost:3000";
+import {signUPSignin} from "./test_utils";
+import { Base_url } from "../api/config";
+let jwt , url : string  ; 
+beforeAll(async () =>{
+ const created =  await signUPSignin();
+ if (created){
+   jwt = created.jwt;
+   url = created.url; 
+
+ }
+
+  // created user for this on e
+})
 describe("website gets created", () => {
   it("website not created if url is not presnt ", async () => {
     try {
@@ -50,4 +63,22 @@ describe("testing signup " ,()=>{
 
 } )
 
+
+
+describe("testing status " , ()=>{
+  it("testing site with jwt"  , async ()=>{
+    try {
+      const site = await axios.get(`${Base_url}/users/status/${url}`,{
+        headers : {
+          authorization : jwt!
+        }
+      } );
+
+      expect(true , "got the  status ");
+    }catch(e){
+        expect(false , "can,t get it with proper jwt ");
+
+    }
+  })
+})
 
