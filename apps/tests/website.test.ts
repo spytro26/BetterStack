@@ -9,11 +9,14 @@ beforeAll(async () =>{
  if (created){
    jwt = created.jwt;
    url = created.url; 
+    console.log(jwt, "thisi s the outis ");
+    console.log(url, "url");
+
 
  }
 
   // created user for this on e
-})
+},90000)
 describe("website gets created", () => {
   it("website not created if url is not presnt ", async () => {
     try {
@@ -80,5 +83,18 @@ describe("testing status " , ()=>{
 
     }
   })
+
+  it("testing site without jwt", async () => {
+    try {
+      const site = await axios.get(`${Base_url}/users/status/${url}`);
+
+      expect(false, "site created even without the jwt ");
+    } catch (e) {
+      expect(true, "can,t get it with proper jwt ");
+    }
+  });
+
+
+ 
 })
 

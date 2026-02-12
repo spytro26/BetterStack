@@ -21,9 +21,11 @@ userRouter.post("/signup",async  (req : AuthRequest, res)=>{
         });
     }
      const { username, password, phone, email } = req.body;
-
+     console.log("after the boddy ");
+     console.log(req.body , "is the body in the signup ")
     const hash = await bcrypt.hash(password, 3);
     try {
+        console.log("inside db creation of signup")
         await prismaClient.user.create({
         data : {
             username,
@@ -33,6 +35,7 @@ userRouter.post("/signup",async  (req : AuthRequest, res)=>{
             
         }
     })
+    console.log("created succefully in the signup");
 
     }catch(e){
         console.log(e);

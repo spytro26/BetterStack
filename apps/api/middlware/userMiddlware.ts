@@ -13,6 +13,7 @@ export interface AuthRequest extends Request {
 export function userMiddleware (req : AuthRequest , res : Response , next : NextFunction) {
 
     const token = req.headers.authorization;
+    console.log(token  + "is the token ")
     if(!token){
         return res.status(400).json({mesage : "token not found "});
     }
@@ -22,6 +23,7 @@ export function userMiddleware (req : AuthRequest , res : Response , next : Next
 
     }
     req.userId=validToken as string;
+    console.log(req.userId + "userId is this ");
     next();
     
 

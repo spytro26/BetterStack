@@ -20,6 +20,7 @@ websiteRouter.post("/create", async (req : AuthRequest, res) => {
         user_id: userId,
       },
     });
+    console.log("website created succesfll")
   } catch (e) {
     if (e instanceof Error) {
       console.log(e.message);
