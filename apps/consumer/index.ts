@@ -50,6 +50,7 @@ const client = await createClient()
             });
         }
         else {
+            // error 
              pipeline.xAdd("betterstack:db", "*", {
                region_id: "3d9ac87b-18e9-4eaa-8f91-1816a00099ec",
                website_id: message.message.id,
@@ -68,6 +69,8 @@ const client = await createClient()
         await client.xAck("betterstack:website", "india", message.id);
       }
     }
+
+    // they are not getting pushed tot he db 
 
 
    // got all the 4 things
