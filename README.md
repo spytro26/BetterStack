@@ -1,135 +1,363 @@
-# Turborepo starter
+<div align="center">
 
-This Turborepo starter is maintained by the Turborepo core team.
+# ⚡ BetterUptime
 
-## Using this example
+### A distributed website uptime monitoring system built with Redis Streams, PostgreSQL & Turborepo
 
-Run the following command:
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.9-blue?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
+[![Bun](https://img.shields.io/badge/Bun-1.3-black?logo=bun&logoColor=white)](https://bun.sh/)
+[![Redis](https://img.shields.io/badge/Redis-Streams-DC382D?logo=redis&logoColor=white)](https://redis.io/)
+[![PostgreSQL](https://img.shields.io/badge/PostgreSQL-Prisma-4169E1?logo=postgresql&logoColor=white)](https://www.prisma.io/)
+[![Turborepo](https://img.shields.io/badge/Turborepo-Monorepo-EF4444?logo=turborepo&logoColor=white)](https://turborepo.dev/)
+[![Next.js](https://img.shields.io/badge/Next.js-Frontend-000?logo=next.js&logoColor=white)](https://nextjs.org/)
 
-```sh
-npx create-turbo@latest
-```
+</div>
 
-## What's inside?
+---
 
-This Turborepo includes the following packages/apps:
+## 📖 Overview
 
-### Apps and Packages
+**BetterUptime** is a real-time website uptime monitoring platform that tracks the health, status, and response times of registered websites. It uses a **distributed, event-driven architecture** powered by **Redis Streams** for decoupled communication between services, ensuring scalability and fault-tolerance.
 
-- `docs`: a [Next.js](https://nextjs.org/) app
-- `web`: another [Next.js](https://nextjs.org/) app
-- `@repo/ui`: a stub React component library shared by both `web` and `docs` applications
-- `@repo/eslint-config`: `eslint` configurations (includes `eslint-config-next` and `eslint-config-prettier`)
-- `@repo/typescript-config`: `tsconfig.json`s used throughout the monorepo
+Users register websites via the **REST API**, and the system periodically pings those websites from monitoring workers, recording latency, status (`UP` / `Down`), and region data — all stored in **PostgreSQL** via **Prisma ORM**.
 
-Each package/app is 100% [TypeScript](https://www.typescriptlang.org/).
+---
 
-### Utilities
+## 🏗️ System Architecture
 
-This Turborepo has some additional tools already setup for you:
+<div align="center">
 
-- [TypeScript](https://www.typescriptlang.org/) for static type checking
-- [ESLint](https://eslint.org/) for code linting
-- [Prettier](https://prettier.io) for code formatting
+![System Design](apps/structure.jpg)
 
-### Build
+</div>
 
-To build all apps and packages, run the following command:
+The system follows an **event-driven, microservice-like architecture** built as a Turborepo monorepo. Here is a high-level overview of the data flow:
 
 ```
-cd my-turborepo
-
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build
-
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build
-yarn dlx turbo build
-pnpm exec turbo build
+┌──────────────┐       ┌──────────────────────────────────────────────────────────┐
+│   Frontend   │       │                     Redis Streams                       │
+│   (Next.js)  │       │                                                          │
+└──────┬───────┘       │  ┌─────────────────────┐    ┌─────────────────────────┐  │
+       │               │  │ betterstack:website  │    │    betterstack:db       │  │
+       │ HTTP          │  │  (website URLs queue) │───▶│ (monitoring results)   │  │
+       ▼               │  └──────────▲───────────┘    └───────────┬────────────┘  │
+┌──────────────┐       │             │                            │               │
+│   REST API   │       └─────────────┼────────────────────────────┼───────────────┘
+│  (Express)   │──── reads websites  │                            │
+│  Port 3000   │     from DB &       │                            │
+│              │     publishes       │         ┌──────────────────▼─────────────┐
+└──────┬───────┘                     │         │         DB Pusher              │
+       │                             │         │    (Consumer → PostgreSQL)     │
+       │                             │         │  Reads results from stream     │
+       ▼                             │         │  & batch-inserts into Ticks    │
+┌──────────────┐              ┌──────┴───────┐ └──────────────┬────────────────┘
+│  PostgreSQL  │◀─────────────│  Publisher   │                │
+│   (Prisma)   │              │  (Scheduler) │                │
+│              │◀─────────────┤ Runs every   │                │
+│  - Users     │              │ 3 minutes    │                │
+│  - Websites  │              └──────────────┘                │
+│  - Ticks     │                                              │
+│  - Regions   │◀─────────────────────────────────────────────┘
+└──────────────┘
+                     ┌──────────────────────────────┐
+                     │     Consumer (Worker)         │
+                     │  - Reads from Redis Stream    │
+                     │    (consumer group: "india")  │
+                     │  - Pings each website (HTTP)  │
+                     │  - Measures response time     │
+                     │  - Publishes result to        │
+                     │    betterstack:db stream      │
+                     └──────────────────────────────┘
 ```
 
-You can build a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+### Data Flow
+
+1. **User** registers and adds websites via the **REST API**.
+2. **Publisher** (runs every 3 minutes) reads all websites from PostgreSQL and pushes their URLs into the `betterstack:website` **Redis Stream**.
+3. **Consumer Worker(s)** read from the stream using a **Redis Consumer Group** (`india`), enabling horizontal scaling of workers.
+4. Each consumer **pings the website** via HTTP, measures **response time** and determines **status** (`UP` / `Down`).
+5. Results are pushed to the `betterstack:db` Redis Stream.
+6. **DB Pusher** reads from `betterstack:db` and **batch-inserts** monitoring ticks into PostgreSQL.
+7. The **Frontend** (Next.js) and API allow users to view website status and historical tick data.
+
+---
+
+## 📂 Project Structure
+
+This is a **Turborepo monorepo** with the following apps and packages:
 
 ```
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo build --filter=docs
-
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo build --filter=docs
-yarn exec turbo build --filter=docs
-pnpm exec turbo build --filter=docs
+betteruptime/
+├── apps/
+│   ├── api/               # Express REST API (auth, website CRUD, status)
+│   ├── publisher/         # Scheduler that publishes website URLs to Redis Stream
+│   ├── consumer/          # Worker that pings websites & records results
+│   │   ├── index.ts       # Stream consumer (pings websites)
+│   │   └── dbpusher.ts    # Reads results from stream & writes to PostgreSQL
+│   ├── web/               # Next.js frontend application
+│   └── tests/             # End-to-end tests (Bun test runner)
+│
+├── packages/
+│   ├── db/                # Prisma ORM client & schema (shared database layer)
+│   │   └── prisma/
+│   │       └── schema.prisma
+│   ├── ui/                # Shared React UI components
+│   ├── eslint-config/     # Shared ESLint configurations
+│   └── typescript-config/ # Shared TypeScript configurations
+│
+├── turbo.json             # Turborepo pipeline configuration
+└── package.json           # Root workspace config (Bun)
 ```
 
-### Develop
+---
 
-To develop all apps and packages, run the following command:
+## 🧩 Apps & Services
+
+### 🔌 API (`apps/api`)
+
+The REST API built with **Express 5** that handles authentication and website management.
+
+| Endpoint                    | Method | Auth | Description                                            |
+| --------------------------- | ------ | ---- | ------------------------------------------------------ |
+| `/users/signup`             | `POST` | ❌   | Register a new user (username, password, email, phone) |
+| `/users/signin`             | `POST` | ❌   | Sign in and receive a JWT token                        |
+| `/users/status/:websiteUrl` | `GET`  | ✅   | Get latest tick status for a specific website          |
+| `/website/create`           | `POST` | ✅   | Register a new website for monitoring                  |
+| `/test`                     | `GET`  | ❌   | Health check endpoint                                  |
+
+**Key features:**
+
+- JWT-based authentication
+- Zod request body validation
+- bcrypt password hashing
+- CORS enabled
+
+---
+
+### 📡 Publisher (`apps/publisher`)
+
+A **scheduler service** that runs every **3 minutes** and:
+
+1. Reads all registered websites from PostgreSQL.
+2. Clears the `betterstack:website` Redis Stream.
+3. Re-creates the consumer group.
+4. Pushes all website URLs and IDs into the stream using a **Redis pipeline** for efficiency.
+
+---
+
+### ⚙️ Consumer (`apps/consumer`)
+
+The **monitoring worker** that does the actual website health checking:
+
+#### `index.ts` — Stream Consumer
+
+- Joins the **`india` consumer group** on the `betterstack:website` stream.
+- Reads website URLs in batches of 10 (with 5s blocking).
+- **Pings each URL** via HTTP GET request.
+- Measures **response time** in milliseconds.
+- Determines status: `UP` (HTTP < 400) or `Down` (HTTP ≥ 400 or timeout).
+- Pushes results (website_id, region_id, status, response time) to the `betterstack:db` stream.
+- Acknowledges processed messages via `XACK`.
+
+#### `dbpusher.ts` — Database Writer
+
+- Reads monitoring results from the `betterstack:db` stream.
+- **Batch-inserts** ticks into PostgreSQL via `prisma.ticks.createMany()`.
+- Runs every **3 minutes** to periodically flush results to the database.
+
+---
+
+### 🖥️ Web (`apps/web`)
+
+A **Next.js** frontend application (scaffolded, ready for dashboard UI development).
+
+---
+
+### 🧪 Tests (`apps/tests`)
+
+End-to-end tests using the **Bun test runner**:
+
+- ✅ Website creation (with and without URL)
+- ✅ User signup (with and without required fields)
+- ✅ Status endpoint (with and without JWT)
+
+---
+
+## 🗄️ Database Schema
+
+The PostgreSQL database is managed via **Prisma ORM** with the following models:
 
 ```
-cd my-turborepo
+┌──────────────┐      ┌──────────────┐      ┌──────────────┐
+│     User     │      │   Website    │      │    Region    │
+├──────────────┤      ├──────────────┤      ├──────────────┤
+│ id (uuid)    │──┐   │ id (uuid)    │   ┌──│ id (uuid)    │
+│ username     │  │   │ url (unique) │   │  │ country      │
+│ password     │  └──▶│ user_id (FK) │   │  └──────────────┘
+│ mail?        │      │ createdAt    │   │
+│ number?      │      └──────┬───────┘   │
+└──────────────┘             │           │
+                             ▼           │
+                      ┌──────────────┐   │
+                      │    Ticks     │   │
+                      ├──────────────┤   │
+                      │ id (uuid)    │   │
+                      │ responseTime │   │
+                      │ status (enum)│   │
+                      │ website_id ──┼───┘
+                      │ region_id  ──┼───┘
+                      │ createdAt    │
+                      └──────────────┘
 
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev
-
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev
-yarn exec turbo dev
-pnpm exec turbo dev
+              Status Enum: UP | Down | Unknown
 ```
 
-You can develop a specific package by using a [filter](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters):
+---
 
-```
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo dev --filter=web
+## 🛠️ Tech Stack
 
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo dev --filter=web
-yarn exec turbo dev --filter=web
-pnpm exec turbo dev --filter=web
-```
+| Layer              | Technology                           |
+| ------------------ | ------------------------------------ |
+| **Monorepo**       | Turborepo                            |
+| **Runtime**        | Bun                                  |
+| **Language**       | TypeScript 5.9                       |
+| **API Framework**  | Express 5                            |
+| **Frontend**       | Next.js (React)                      |
+| **Database**       | PostgreSQL                           |
+| **ORM**            | Prisma (with `@prisma/adapter-pg`)   |
+| **Message Broker** | Redis Streams (with Consumer Groups) |
+| **Authentication** | JWT + bcrypt                         |
+| **Validation**     | Zod                                  |
+| **Testing**        | Bun Test Runner                      |
+| **UI Components**  | Shared `@repo/ui` package            |
 
-### Remote Caching
+---
 
-> [!TIP]
-> Vercel Remote Cache is free for all plans. Get started today at [vercel.com](https://vercel.com/signup?/signup?utm_source=remote-cache-sdk&utm_campaign=free_remote_cache).
+## 🚀 Getting Started
 
-Turborepo can use a technique known as [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching) to share cache artifacts across machines, enabling you to share build caches with your team and CI/CD pipelines.
+### Prerequisites
 
-By default, Turborepo will cache locally. To enable Remote Caching you will need an account with Vercel. If you don't have an account you can [create one](https://vercel.com/signup?utm_source=turborepo-examples), then enter the following commands:
+- [Bun](https://bun.sh/) (v1.3+)
+- [Redis](https://redis.io/) (v7+ with Streams support)
+- [PostgreSQL](https://www.postgresql.org/) (v14+)
+- [Node.js](https://nodejs.org/) (v18+)
 
-```
-cd my-turborepo
+### 1. Clone the Repository
 
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo login
-
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo login
-yarn exec turbo login
-pnpm exec turbo login
-```
-
-This will authenticate the Turborepo CLI with your [Vercel account](https://vercel.com/docs/concepts/personal-accounts/overview).
-
-Next, you can link your Turborepo to your Remote Cache by running the following command from the root of your Turborepo:
-
-```
-# With [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation) installed (recommended)
-turbo link
-
-# Without [global `turbo`](https://turborepo.dev/docs/getting-started/installation#global-installation), use your package manager
-npx turbo link
-yarn exec turbo link
-pnpm exec turbo link
+```bash
+git clone https://github.com/your-username/betteruptime.git
+cd betteruptime
 ```
 
-## Useful Links
+### 2. Install Dependencies
 
-Learn more about the power of Turborepo:
+```bash
+bun install
+```
 
-- [Tasks](https://turborepo.dev/docs/crafting-your-repository/running-tasks)
-- [Caching](https://turborepo.dev/docs/crafting-your-repository/caching)
-- [Remote Caching](https://turborepo.dev/docs/core-concepts/remote-caching)
-- [Filtering](https://turborepo.dev/docs/crafting-your-repository/running-tasks#using-filters)
-- [Configuration Options](https://turborepo.dev/docs/reference/configuration)
-- [CLI Usage](https://turborepo.dev/docs/reference/command-line-reference)
+### 3. Set Up Environment Variables
+
+Create a `.env` file in the project root (or in each app directory as needed):
+
+```env
+DATABASE_URL="postgresql://user:password@localhost:5432/betteruptime"
+jwt_secret="your-super-secret-key"
+```
+
+### 4. Run Database Migrations
+
+```bash
+cd packages/db
+bunx prisma migrate dev
+```
+
+### 5. Generate Prisma Client
+
+```bash
+bunx prisma generate
+```
+
+### 6. Start Redis
+
+```bash
+redis-server
+```
+
+### 7. Start All Services
+
+From the root of the monorepo:
+
+```bash
+# Start all apps in development mode
+bun run dev
+```
+
+Or start each service individually:
+
+```bash
+# Terminal 1 — API Server
+cd apps/api && bun run dev
+
+# Terminal 2 — Publisher (scheduler)
+cd apps/publisher && bun index.ts
+
+# Terminal 3 — Consumer (monitoring worker)
+cd apps/consumer && bun index.ts
+
+# Terminal 4 — DB Pusher
+cd apps/consumer && bun dbpusher.ts
+
+# Terminal 5 — Frontend
+cd apps/web && bun run dev
+```
+
+---
+
+## 🧪 Running Tests
+
+```bash
+cd apps/tests
+bun test
+```
+
+> **Note:** Make sure the API server is running on `localhost:3000` before executing tests.
+
+---
+
+## 🔑 Why Redis Streams?
+
+This project uses **Redis Streams** with **Consumer Groups** instead of simple pub/sub or direct HTTP calls for several key reasons:
+
+| Feature                     | Benefit                                                                                            |
+| --------------------------- | -------------------------------------------------------------------------------------------------- |
+| **Consumer Groups**         | Multiple workers can process the same stream without duplicating work — enables horizontal scaling |
+| **Message Acknowledgement** | `XACK` ensures at-least-once delivery — no monitoring ticks are lost                               |
+| **Backpressure Handling**   | `BLOCK` and `COUNT` parameters allow workers to process at their own pace                          |
+| **Decoupled Architecture**  | Publisher, Consumer, and DB Pusher are completely independent services                             |
+| **Pipeline Batching**       | Redis pipelines are used for efficient bulk writes to streams                                      |
+
+---
+
+## 🗺️ Roadmap
+
+- [ ] Dashboard UI with real-time charts and uptime history
+- [ ] Multi-region monitoring (deploy consumers in multiple regions)
+- [ ] Alerting system (email / SMS / webhook notifications on downtime)
+- [ ] Configurable check intervals per website
+- [ ] SSL certificate expiry monitoring
+- [ ] Status page generation (public status pages for users)
+- [ ] WebSocket-based real-time status updates in the frontend
+
+---
+
+## 📄 License
+
+This project is open source and available under the [MIT License](LICENSE).
+
+---
+
+<div align="center">
+
+**Built with ❤️ using TypeScript, Redis Streams & Turborepo**
+
+</div>

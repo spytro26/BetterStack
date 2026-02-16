@@ -5,12 +5,13 @@ import axios from "axios"
 const client = await createClient()
   .on("error", (err) => console.log("Redis Client Error", err))
   .connect();
-   const pipeline = client.multi();
-
-
-
+ 
    // this is consumer \
    while (true){
+      const pipeline = client.multi();
+
+
+
     console.log("started");
     const response  : any = await  client.xReadGroup(
       "india",  // this is group 
@@ -54,13 +55,19 @@ const client = await createClient()
              pipeline.xAdd("betterstack:db", "*", {
                region_id: "3d9ac87b-18e9-4eaa-8f91-1816a00099ec",
                website_id: message.message.id,
-               status: "DOWN",
+               status: "Down",
                reponseTime_ms: String(responseTime),
              });
 
         }
     }catch(e){
         console.log("failed to fetch the url wrong url ");
+         pipeline.xAdd("betterstack:db", "*", {
+           region_id: "3d9ac87b-18e9-4eaa-8f91-1816a00099ec",
+           website_id: message.message.id,
+           status: "Down",
+           reponseTime_ms: String("999")
+         });
     }
   
          const results = await pipeline.exec();
